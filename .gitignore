@@ -1,0 +1,13 @@
+node_modules/
+.env
+**/.env
+.env.*
+**/__pycache__/
+*.pyc
+.python-venv/
+.venv/
+dist/
+.DS_Store
+keys/
+*.key
+*.key.pub

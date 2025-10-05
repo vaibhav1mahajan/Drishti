@@ -1,0 +1,345 @@
+openapi: 3.1.0
+info:
+  title: DRISHTI Backend API
+  version: "1.0.0"
+  description: >
+    Authentication (JWT RS256 with refresh rotation), Users, Roles (admin/user), MFA (TOTP),
+    and JWKS for key discovery.
+
+servers:
+  - url: http://127.0.0.1:5050
+    description: Local dev
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: System
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    RegisterRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        code:
+          type: string
+          description: Optional TOTP (if MFA enabled)
+    TokensResponse:
+      type: object
+      required: [access_token, refresh_token]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+    RefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+          description: >
+            Optional when using httpOnly cookie; required here if sending in JSON body.
+    MFARequest:
+      type: object
+      required: [email, code]
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+          description: 6-digit TOTP
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        avatarUrl:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+        mfaEnabled:
+          type: boolean
+    UserCreate:
+      type: object
+      required: [email, name, password]
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        password:
+          type: string
+          minLength: 8
+        role:
+          type: string
+          enum: [admin, user]
+          default: user
+    UserUpdateMe:
+      type: object
+      properties:
+        name:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+    RoleUpdate:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [admin, user]
+
+paths:
+  /ping:
+    get:
+      tags: [System]
+      summary: Simple liveness check
+      responses:
+        '200':
+          description: OK (pong)
+
+  /health:
+    get:
+      tags: [System]
+      summary: Backend health
+      responses:
+        '200':
+          description: OK
+
+  /.well-known/jwks.json:
+    get:
+      tags: [Auth]
+      summary: Public JWKS (RSA keys)
+      responses:
+        '200':
+          description: JWKS
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items: { type: object }
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user (dev/local only)
+      description: >
+        Creates a user with role determined by server-side logic (e.g., ADMIN_EMAILS env).
+        In production, prefer admin-created users instead of open registration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:    { type: string }
+                  email: { type: string, format: email }
+                  role:  { type: string, enum: [admin, user] }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and receive access/refresh tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokensResponse' }
+        '401': { description: Invalid credentials, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh; returns new access/refresh
+      description: >
+        If using cookies, server will read httpOnly refresh cookie. Otherwise send { refresh_token } in body.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: New tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokensResponse' }
+        '401': { description: Invalid/missing refresh, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke refresh token and end session
+      responses:
+        '200': { description: OK }
+
+  /api/v1/auth/mfa/verify:
+    post:
+      tags: [Auth]
+      summary: Verify TOTP code for MFA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MFARequest' }
+      responses:
+        '200': { description: Verified (or not), content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } } }
+
+  /api/v1/users/me:
+    get:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: Get own profile
+      responses:
+        '200':
+          description: Self profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { description: Unauthorized }
+    patch:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: Update own name/avatar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdateMe' }
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { description: Unauthorized }
+
+  /api/v1/users:
+    get:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: List users (admin)
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/User' }
+        '403': { description: Forbidden }
+    post:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: Create/invite user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { description: Forbidden }
+
+  /api/v1/users/{id}/roles:
+    patch:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: Change a user's role (admin)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleUpdate' }
+      responses:
+        '200': { description: OK }
+        '403': { description: Forbidden }
+
+  /api/v1/users/{id}:
+    delete:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: Soft-delete (deactivate) a user (admin)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+        '403': { description: Forbidden }

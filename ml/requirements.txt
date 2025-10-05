@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+pydantic
+tensorflow
+transformers
+sentencepiece
+scikit-learn
+prophet
+statsmodels
+spacy
+networkx
+plotly
+opensearch-py
+langchain
+crewai
+requests
