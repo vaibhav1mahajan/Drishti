@@ -4,7 +4,7 @@ A simple guide to run the project locally using Docker (no prior Docker knowledg
 
 ## What’s inside
 - Backend (Bun + Express API)
-- Frontend (Streamlit)
+- Frontend (React + tailwind)
 - ML service (FastAPI)
 - MongoDB + OpenSearch (dev dependencies)
 
@@ -80,7 +80,7 @@ This will start all services in the background. First run can take a few minutes
 ### Open the apps
 - Backend API: http://localhost:5050/ping
 - OpenAPI docs (static viewer): http://localhost:8081
-- Frontend (Streamlit): http://localhost:8501
+- Frontend (React over nginx): http://localhost:8080
 - ML service (FastAPI): http://localhost:8000
 - OpenSearch: http://localhost:9200 (dev only)
 
@@ -172,13 +172,13 @@ bun --hot src/index.ts
 ```
 Open http://localhost:5050/ping
 
-3) Frontend:
+3) Frontend (React dev server):
 ```bash
 cd frontend
-pip install -r requirements.txt
-streamlit run app.py
+npm ci
+npm run dev
 ```
-Open http://localhost:8501
+Open the printed URL (usually http://localhost:5173)
 
 4) ML service:
 ```bash
@@ -200,6 +200,12 @@ Open http://localhost:8000
 
 - Frontend can’t reach backend:
   - In Docker, frontend uses `http://backend:5050` automatically (configured in compose).
-  - From your browser, use `http://localhost:8501` to open the UI.
+  - Open the app at `http://localhost:8080` when running with Docker, or Vite’s URL when running locally.
+
+### Rebuild frontend with no cache
+If your frontend changes aren’t showing up in Docker, rebuild its image without cache:
+```bash
+docker compose build --no-cache frontend && docker compose up -d frontend
+```
 
 If you get stuck, share the last 50 lines of `docker compose logs backend` in your message.

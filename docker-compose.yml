@@ -44,9 +44,7 @@ services:
     environment:
       - API_BASE_URL=http://backend:5050
     depends_on: [backend]
-    ports: ["8501:8501"]
-    volumes:
-      - ./frontend:/app
+    ports: ["8080:80"]
 
   ml:
     build: ./ml
